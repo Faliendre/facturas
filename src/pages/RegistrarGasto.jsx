@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import imageCompression from 'browser-image-compression';
 
 export default function RegistrarGasto() {
     const navigate = useNavigate();
-    const [loading, setLoading] = useState(false);
+    const [loadingStatus, setLoadingStatus] = useState(''); // '', 'procesando', 'subiendo', 'registrando'
     const [formData, setFormData] = useState({
         fecha: '',
         tipo: 'Factura',
@@ -13,32 +14,80 @@ export default function RegistrarGasto() {
         notas: ''
     });
     const [file, setFile] = useState(null);
+    const [previewUrl, setPreviewUrl] = useState(null);
+
+    const handleFileChange = (e) => {
+        const selectedFile = e.target.files[0];
+        if (!selectedFile) return;
+
+        // Validar tipos permitidos
+        const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
+        if (!validTypes.includes(selectedFile.type)) {
+            alert('Fallo de validación: Solo se permiten imágenes (JPG, PNG, WEBP) o documentos PDF.');
+            e.target.value = '';
+            return;
+        }
+
+        // Limitar el tamaño a 10MB
+        if (selectedFile.size > 10 * 1024 * 1024) {
+            alert('El archivo pesa más de 10 MB. Por favor elige un archivo más pequeño.');
+            e.target.value = '';
+            return;
+        }
+
+        setFile(selectedFile);
+
+        // Crear vista previa si es imagen
+        if (selectedFile.type.startsWith('image/')) {
+            setPreviewUrl(URL.createObjectURL(selectedFile));
+        } else {
+            setPreviewUrl(null);
+        }
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!file) {
-            alert('Por favor, sube un documento.');
+            alert('Por favor, sube un documento (imagen o PDF).');
             return;
         }
 
-        setLoading(true);
-        let documento_url = null;
+        let fileToUpload = file;
 
         try {
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${Math.random()}.${fileExt}`;
+            // 1. Compresión de imagen (si aplica)
+            if (file.type.startsWith('image/')) {
+                setLoadingStatus('procesando');
+                const options = {
+                    maxSizeMB: 0.4,
+                    maxWidthOrHeight: 1600,
+                    useWebWorker: true,
+                };
+                fileToUpload = await imageCompression(file, options);
+            }
+
+            // 2. Subida a Supabase
+            setLoadingStatus('subiendo');
+            let documento_url = null;
+
+            const fileExt = fileToUpload.name.split('.').pop() || (file.type === 'application/pdf' ? 'pdf' : 'jpg');
+            const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+
             const { error: uploadError } = await supabase.storage
                 .from('documentos')
-                .upload(fileName, file);
+                .upload(fileName, fileToUpload);
 
             if (uploadError) throw uploadError;
 
+            // 3. Obtener URL de Supabase Storage
             const { data: { publicUrl } } = supabase.storage
                 .from('documentos')
                 .getPublicUrl(fileName);
 
             documento_url = publicUrl;
 
+            // 4. Registro en base de datos
+            setLoadingStatus('registrando');
             const { error: insertError } = await supabase
                 .from('registros')
                 .insert([{
@@ -57,13 +106,20 @@ export default function RegistrarGasto() {
             console.error('Error:', error);
             alert('Hubo un error al registrar el gasto: ' + error.message);
         } finally {
-            setLoading(false);
+            setLoadingStatus('');
         }
     };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const getLoadingMessage = () => {
+        if (loadingStatus === 'procesando') return 'Procesando y comprimiendo imagen...';
+        if (loadingStatus === 'subiendo') return 'Subiendo documento a la nube...';
+        if (loadingStatus === 'registrando') return 'Guardando en la base de datos...';
+        return 'Registrar gasto';
     };
 
     return (
@@ -147,21 +203,36 @@ export default function RegistrarGasto() {
 
                     <div className="space-y-2">
                         <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider ml-1">Subir Documento (Imagen o PDF)</label>
-                        <div className="group relative flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-outline-variant rounded-xl bg-surface-container-low hover:bg-white hover:border-primary transition-all cursor-pointer">
-                            <span className="material-symbols-outlined text-4xl text-primary/40 group-hover:text-primary transition-colors mb-2">cloud_upload</span>
-                            {file ? (
-                                <p className="text-sm font-bold text-primary">{file.name}</p>
-                            ) : (
-                                <>
-                                    <p className="text-sm text-on-surface-variant"><span className="font-bold text-primary">Haz clic para subir</span> o arrastra y suelta</p>
-                                    <p className="text-xs text-outline mt-1">Soporta JPG, PNG y PDF</p>
-                                </>
-                            )}
+                        <div className="group relative flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-4 w-full min-h-[160px] p-6 border-2 border-dashed border-outline-variant rounded-xl bg-surface-container-low hover:bg-white hover:border-primary transition-all cursor-pointer overflow-hidden">
+
+                            {previewUrl ? (
+                                <div className="h-28 w-28 rounded-lg overflow-hidden border border-outline-variant/30 flex-shrink-0">
+                                    <img src={previewUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                                </div>
+                            ) : null}
+
+                            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+                                {file ? (
+                                    <>
+                                        <span className="material-symbols-outlined text-3xl text-primary mb-1">{file.type === 'application/pdf' ? 'picture_as_pdf' : 'image'}</span>
+                                        <p className="text-sm font-bold text-primary break-all">{file.name}</p>
+                                        <p className="text-xs text-outline mt-1 text-center sm:text-left">Añadido exitosamente. Haz clic o arrastra para cambiar.</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-4xl text-primary/40 group-hover:text-primary transition-colors mb-2">cloud_upload</span>
+                                        <p className="text-sm text-on-surface-variant"><span className="font-bold text-primary">Haz clic para subir</span> o arrastra y suelta</p>
+                                        <p className="text-xs text-outline mt-1">Imágenes (serán comprimidas) o PDF. Máx 10MB.</p>
+                                    </>
+                                )}
+                            </div>
+
                             <input
                                 type="file"
-                                accept=".jpg,.jpeg,.png,.pdf"
-                                onChange={(e) => setFile(e.target.files[0])}
+                                accept=".jpg,.jpeg,.png,.webp,application/pdf"
+                                onChange={handleFileChange}
                                 className="absolute inset-0 opacity-0 cursor-pointer"
+                                disabled={loadingStatus !== ''}
                             />
                         </div>
                     </div>
@@ -181,11 +252,15 @@ export default function RegistrarGasto() {
                     <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-outline-variant/10">
                         <button
                             type="submit"
-                            disabled={loading}
-                            className="flex-1 bg-primary text-on-primary font-bold py-4 px-8 rounded-xl shadow-lg shadow-primary/10 hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                            disabled={loadingStatus !== ''}
+                            className="flex-1 bg-primary text-white font-bold py-4 px-8 rounded-xl shadow-lg shadow-primary/10 hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                         >
-                            <span className="material-symbols-outlined">check_circle</span>
-                            {loading ? 'Subiendo...' : 'Registrar gasto'}
+                            {loadingStatus === '' ? (
+                                <span className="material-symbols-outlined">check_circle</span>
+                            ) : (
+                                <span className="material-symbols-outlined animate-spin">refresh</span>
+                            )}
+                            {getLoadingMessage()}
                         </button>
                         <button
                             type="button"
@@ -202,11 +277,11 @@ export default function RegistrarGasto() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-6 bg-surface-container rounded-xl flex items-start gap-4">
                     <div className="bg-primary-fixed p-3 rounded-lg text-primary">
-                        <span className="material-symbols-outlined">lightbulb</span>
+                        <span className="material-symbols-outlined">network_ping</span>
                     </div>
                     <div>
-                        <h4 className="font-headline font-bold text-on-surface">Consejo de Ahorro</h4>
-                        <p className="text-sm text-on-surface-variant mt-1">Clasificar correctamente tus gastos nos ayuda a predecir tus ahorros mensuales con mayor precisión.</p>
+                        <h4 className="font-headline font-bold text-on-surface">Carga Optimizada</h4>
+                        <p className="text-sm text-on-surface-variant mt-1">Nuestra nueva tecnología comprime automáticamente tus fotografías y capturas desde tu celular para ahorrar datos y almacenamiento sin perder nitidez.</p>
                     </div>
                 </div>
                 <div className="p-6 rounded-xl flex items-start gap-4" style={{ backgroundColor: 'rgba(0,84,56,0.1)', border: '1px solid rgba(0,84,56,0.05)' }}>
