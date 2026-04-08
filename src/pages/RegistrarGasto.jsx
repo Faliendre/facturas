@@ -59,7 +59,7 @@ export default function RegistrarGasto() {
         setIsAnalyzing(true);
         try {
             const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
             const prompt = `Analiza este recibo/factura y extrae los datos solicitados en formato JSON puro.
 No incluyas markdown, no incluyas bloque \`\`\`json. Solo devuelve el objeto JSON.
