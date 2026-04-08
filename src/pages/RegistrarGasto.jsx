@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export default function RegistrarGasto() {
     const navigate = useNavigate();
     const [loadingStatus, setLoadingStatus] = useState(''); // '', 'procesando', 'subiendo', 'registrando'
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [formData, setFormData] = useState({
         fecha: '',
         tipo: 'Factura',
@@ -44,6 +46,63 @@ export default function RegistrarGasto() {
             setPreviewUrl(null);
         }
     };
+
+    const fileToBase64 = (f) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(f);
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = error => reject(error);
+    });
+
+    const analyzeImageWithAI = async () => {
+        if (!file || !file.type.startsWith('image/')) return;
+        setIsAnalyzing(true);
+        try {
+            const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+            const prompt = `Analiza este recibo/factura y extrae los datos solicitados en formato JSON puro.
+No incluyas markdown, no incluyas bloque \`\`\`json. Solo devuelve el objeto JSON.
+Estructura Requerida:
+{
+  "fecha": "YYYY-MM-DD",
+  "monto": "numero",
+  "concepto": "descripcion",
+  "tipo": "Factura"
+}
+Si la fecha no la encuentras, pon "". El monto como texto numérico con decimales separado por "." sin signo. Concepto resumen muy breve de la tienda y la compra.`;
+
+            const base64Data = await fileToBase64(file);
+            const imagePart = {
+                inlineData: {
+                    data: base64Data,
+                    mimeType: file.type
+                }
+            };
+
+            const result = await model.generateContent([prompt, imagePart]);
+            const responseText = result.response.text();
+
+            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const data = JSON.parse(cleanText);
+
+            setFormData(prev => ({
+                ...prev,
+                fecha: data.fecha || prev.fecha,
+                monto: data.monto || prev.monto,
+                concepto: data.concepto || prev.concepto,
+                tipo: data.tipo || prev.tipo
+            }));
+
+            alert('¡Magia completada! Datos extraídos con éxito.');
+        } catch (error) {
+            console.error("AI Error:", error);
+            alert('Fallo al extraer datos con la IA. Es posible que la foto no sea legible o tenga mal formato.');
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -203,15 +262,28 @@ export default function RegistrarGasto() {
 
                     <div className="space-y-2">
                         <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider ml-1">Subir Documento (Imagen o PDF)</label>
-                        <div className="group relative flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-4 w-full min-h-[160px] p-6 border-2 border-dashed border-outline-variant rounded-xl bg-surface-container-low hover:bg-white hover:border-primary transition-all cursor-pointer overflow-hidden">
+                        <div className="group relative flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-4 w-full min-h-[160px] p-6 border-2 border-dashed border-outline-variant rounded-xl bg-surface-container-low hover:bg-white hover:border-primary transition-all overflow-hidden">
 
                             {previewUrl ? (
-                                <div className="h-28 w-28 rounded-lg overflow-hidden border border-outline-variant/30 flex-shrink-0">
-                                    <img src={previewUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                                <div className="flex flex-col gap-2 items-center flex-shrink-0 z-20">
+                                    <div className="h-24 w-24 rounded-lg overflow-hidden border border-outline-variant/30 pointer-events-none relative shadow-md bg-white">
+                                        <img src={previewUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.preventDefault(); analyzeImageWithAI(); }}
+                                        disabled={isAnalyzing}
+                                        className="text-[11px] bg-tertiary text-white font-bold py-1.5 px-3 rounded-lg hover:opacity-90 flex items-center gap-1 shadow-md shadow-tertiary/20 disabled:opacity-50 transition-all cursor-pointer relative top-0"
+                                    >
+                                        <span className={`material-symbols-outlined text-sm ${isAnalyzing ? 'animate-spin' : ''}`}>
+                                            {isAnalyzing ? 'refresh' : 'auto_awesome'}
+                                        </span>
+                                        {isAnalyzing ? 'Pensando...' : 'Completar IA'}
+                                    </button>
                                 </div>
                             ) : null}
 
-                            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+                            <div className="flex flex-col items-center sm:items-start text-center sm:text-left z-0 pointer-events-none">
                                 {file ? (
                                     <>
                                         <span className="material-symbols-outlined text-3xl text-primary mb-1">{file.type === 'application/pdf' ? 'picture_as_pdf' : 'image'}</span>
@@ -231,8 +303,9 @@ export default function RegistrarGasto() {
                                 type="file"
                                 accept=".jpg,.jpeg,.png,.webp,application/pdf"
                                 onChange={handleFileChange}
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                                disabled={loadingStatus !== ''}
+                                className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                disabled={loadingStatus !== '' || isAnalyzing}
+
                             />
                         </div>
                     </div>
