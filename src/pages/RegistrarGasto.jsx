@@ -83,12 +83,28 @@ Si la fecha no la encuentras, pon "". El monto como texto numérico con decimale
             const result = await model.generateContent([prompt, imagePart]);
             const responseText = result.response.text();
 
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const data = JSON.parse(cleanText);
+            const cleanText = responseText.trim();
+            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+
+            if (!jsonMatch) {
+                throw new Error("El modelo no devolvió un JSON válido.");
+            }
+
+            const data = JSON.parse(jsonMatch[0]);
+
+            let finalFecha = data.fecha || '';
+            // Validar que la fecha no contenga basura
+            if (finalFecha && finalFecha.length !== 10) {
+                // Si devuelve algo como 06/04/2026, arreglarlo a YYYY-MM-DD
+                const parts = finalFecha.split('/');
+                if (parts.length === 3) {
+                    finalFecha = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
+            }
 
             setFormData(prev => ({
                 ...prev,
-                fecha: data.fecha || prev.fecha,
+                fecha: finalFecha || prev.fecha,
                 monto: data.monto || prev.monto,
                 concepto: data.concepto || prev.concepto,
                 tipo: data.tipo || prev.tipo
@@ -96,8 +112,8 @@ Si la fecha no la encuentras, pon "". El monto como texto numérico con decimale
 
             alert('¡Magia completada! Datos extraídos con éxito.');
         } catch (error) {
-            console.error("AI Error:", error);
-            alert('Fallo al extraer datos con la IA. Es posible que la foto no sea legible o tenga mal formato.');
+            console.error("AI Error detallado:", error);
+            alert('Fallo al extraer datos con la IA. Error interno o no se encontró información legible.');
         } finally {
             setIsAnalyzing(false);
         }
