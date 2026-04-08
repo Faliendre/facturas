@@ -113,7 +113,7 @@ Si la fecha no la encuentras, pon "". El monto como texto numérico con decimale
             alert('¡Magia completada! Datos extraídos con éxito.');
         } catch (error) {
             console.error("AI Error detallado:", error);
-            alert('Fallo al extraer datos con la IA. Error interno o no se encontró información legible.');
+            alert('Error de IA Módulo: ' + (error.message || error.toString()));
         } finally {
             setIsAnalyzing(false);
         }
