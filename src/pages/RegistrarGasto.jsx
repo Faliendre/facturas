@@ -61,16 +61,19 @@ export default function RegistrarGasto() {
             const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-            const prompt = `Analiza este recibo/factura y extrae los datos solicitados en formato JSON puro.
+            const prompt = `Analiza este documento (puede ser factura comercial, recibo o voucher/extracto bancario) y extrae los datos en formato JSON puro.
 No incluyas markdown, no incluyas bloque \`\`\`json. Solo devuelve el objeto JSON.
 Estructura Requerida:
 {
   "fecha": "YYYY-MM-DD",
   "monto": "numero",
   "concepto": "descripcion",
-  "tipo": "Factura"
+  "tipo": "Factura" o "Extracto bancario"
 }
-Si la fecha no la encuentras, pon "". El monto como texto numérico con decimales separado por "." sin signo. Concepto resumen muy breve de la tienda y la compra.`;
+Reglas:
+- Si la fecha está en formato DD/MM/YY o DD/MM/YYYY conviértela a YYYY-MM-DD (asume 20xx para el año si tiene 2 dígitos).
+- El monto debe ser un string estrictamente numérico con decimales separados por "." (sin comas ni asteriscos). Extrae solo la cifra, no signos como Bs. Ejemplo: de "****500.00" o "1,000.00" obtén "500.00" o "1000.00". Ignora el saldo, busca el "MONTO" retirado o total pagado.
+- Si parece un ticket de cajero automático (ATM), retiro, o estado de cuenta de un Banco (ej. Banco Fie, Comunidad), el "tipo" debe ser "Extracto bancario" y en "concepto" pon "Retiro -" seguido del nombre del banco. Si es una compra normal en tienda, pon "Factura" en "tipo".`;
 
             const base64Data = await fileToBase64(file);
             const imagePart = {
