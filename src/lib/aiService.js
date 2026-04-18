@@ -43,9 +43,10 @@ export const analyzeDocumentWithFallback = async (base64Data, mimeType) => {
         try {
             console.log(`[IA] Intentando con ${keyLabel}...`);
             const genAI = new GoogleGenerativeAI(geminiKeys[i]);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
             const imagePart = {
+
                 inlineData: {
                     data: base64Data,
                     mimeType: mimeType
