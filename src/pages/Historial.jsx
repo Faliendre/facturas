@@ -2,9 +2,13 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import * as XLSX from 'xlsx';
 import { useLocation } from 'react-router-dom';
+import { useNotification } from '../components/Notification';
+
 
 export default function Historial({ userRole }) {
+    const { info } = useNotification();
     const [data, setData] = useState([]);
+
     const [loading, setLoading] = useState(true);
 
     // Filters
@@ -225,8 +229,9 @@ export default function Historial({ userRole }) {
                                                     <button
                                                         className="p-2 text-outline hover:text-primary hover:bg-primary/5 rounded-lg transition-all"
                                                         title="Editar"
-                                                        onClick={() => alert('Edición disponible solo en ambiente full Admin.')}
+                                                        onClick={() => info('Edición disponible solo en ambiente full Admin.')}
                                                     >
+
                                                         <span className="material-symbols-outlined text-lg">edit</span>
                                                     </button>
                                                 )}

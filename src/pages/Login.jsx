@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import { useNotification } from '../components/Notification';
+
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -9,6 +11,8 @@ export default function Login() {
     const [error, setError] = useState('');
     const [isRegister, setIsRegister] = useState(false);
     const navigate = useNavigate();
+    const { success, error: showError } = useNotification();
+
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -22,8 +26,9 @@ export default function Login() {
                     password,
                 });
                 if (error) throw error;
-                alert('Registro exitoso. Comprueba tu correo o inicia sesión directamente.');
+                success('Registro exitoso. Comprueba tu correo o inicia sesión directamente.');
             } else {
+
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
                     password,
@@ -31,9 +36,10 @@ export default function Login() {
                 if (error) throw error;
                 navigate('/');
             }
-        } catch (error) {
-            setError(error.message);
+        } catch (err) {
+            showError(err.message);
         } finally {
+
             setLoading(false);
         }
     };
@@ -50,12 +56,8 @@ export default function Login() {
                     </p>
                 </div>
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    {error && (
-                        <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">
-                            {error}
-                        </div>
-                    )}
                     <div className="rounded-md shadow-sm -space-y-px">
+
                         <div>
                             <input
                                 type="email"

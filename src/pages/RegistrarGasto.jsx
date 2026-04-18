@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import { useNotification } from '../components/Notification';
+
 import imageCompression from 'browser-image-compression';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { analyzeDocumentWithFallback } from '../lib/aiService';
+
 
 export default function RegistrarGasto() {
     const navigate = useNavigate();
+    const { success, error: showError, warning } = useNotification();
     const [loadingStatus, setLoadingStatus] = useState(''); // '', 'procesando', 'subiendo', 'registrando'
+
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [formData, setFormData] = useState({
         fecha: '',
@@ -25,15 +30,17 @@ export default function RegistrarGasto() {
         // Validar tipos permitidos
         const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
         if (!validTypes.includes(selectedFile.type)) {
-            alert('Fallo de validación: Solo se permiten imágenes (JPG, PNG, WEBP) o documentos PDF.');
+            warning('Fallo de validación: Solo se permiten imágenes (JPG, PNG, WEBP) o documentos PDF.');
             e.target.value = '';
+
             return;
         }
 
         // Limitar el tamaño a 10MB
         if (selectedFile.size > 10 * 1024 * 1024) {
-            alert('El archivo pesa más de 10 MB. Por favor elige un archivo más pequeño.');
+            warning('El archivo pesa más de 10 MB. Por favor elige un archivo más pequeño.');
             e.target.value = '';
+
             return;
         }
 
@@ -58,44 +65,11 @@ export default function RegistrarGasto() {
         if (!file || !file.type.startsWith('image/')) return;
         setIsAnalyzing(true);
         try {
-            const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-            const prompt = `Analiza este documento (puede ser factura comercial, recibo o voucher/extracto bancario) y extrae los datos en formato JSON puro.
-No incluyas markdown, no incluyas bloque \`\`\`json. Solo devuelve el objeto JSON.
-Estructura Requerida:
-{
-  "fecha": "YYYY-MM-DD",
-  "monto": "numero",
-  "concepto": "descripcion",
-  "tipo": "Factura" o "Extracto bancario"
-}
-Reglas:
-- Si la fecha está en formato DD/MM/YY o DD/MM/YYYY conviértela a YYYY-MM-DD (asume 20xx para el año si tiene 2 dígitos).
-- El monto debe ser un string estrictamente numérico con decimales separados por "." (sin comas ni asteriscos). Extrae solo la cifra, no signos como Bs. Ejemplo: de "****500.00" o "1,000.00" obtén "500.00" o "1000.00". Ignora el saldo, busca el "MONTO" retirado o total pagado.
-- Si parece un ticket de cajero automático (ATM), retiro, o estado de cuenta de un Banco (ej. Banco Fie, Comunidad), el "tipo" debe ser "Extracto bancario" y en "concepto" pon "Retiro -" seguido del nombre del banco. Si es una compra normal en tienda, pon "Factura" en "tipo".`;
-
             const base64Data = await fileToBase64(file);
-            const imagePart = {
-                inlineData: {
-                    data: base64Data,
-                    mimeType: file.type
-                }
-            };
-
-            const result = await model.generateContent([prompt, imagePart]);
-            const responseText = result.response.text();
-
-            const cleanText = responseText.trim();
-            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-
-            if (!jsonMatch) {
-                throw new Error("El modelo no devolvió un JSON válido.");
-            }
-
-            const data = JSON.parse(jsonMatch[0]);
+            const data = await analyzeDocumentWithFallback(base64Data, file.type);
 
             let finalFecha = data.fecha || '';
+
             // Validar que la fecha no contenga basura
             if (finalFecha && finalFecha.length !== 10) {
                 // Si devuelve algo como 06/04/2026, arreglarlo a YYYY-MM-DD
@@ -113,11 +87,12 @@ Reglas:
                 tipo: data.tipo || prev.tipo
             }));
 
-            alert('¡Magia completada! Datos extraídos con éxito.');
+            success('¡Magia completada! Datos extraídos con éxito.');
         } catch (error) {
             console.error("AI Error detallado:", error);
-            alert('Error de IA Módulo: ' + (error.message || error.toString()));
+            showError('Error de IA Módulo: ' + (error.message || error.toString()));
         } finally {
+
             setIsAnalyzing(false);
         }
     };
@@ -126,9 +101,10 @@ Reglas:
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!file) {
-            alert('Por favor, sube un documento (imagen o PDF).');
+            warning('Por favor, sube un documento (imagen o PDF).');
             return;
         }
+
 
         let fileToUpload = file;
 
@@ -178,12 +154,13 @@ Reglas:
                 }]);
 
             if (insertError) throw insertError;
-            alert('Gasto registrado exitosamente');
+            success('Gasto registrado exitosamente');
             navigate('/historial');
         } catch (error) {
             console.error('Error:', error);
-            alert('Hubo un error al registrar el gasto: ' + error.message);
+            showError('Hubo un error al registrar el gasto: ' + error.message);
         } finally {
+
             setLoadingStatus('');
         }
     };

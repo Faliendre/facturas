@@ -37,12 +37,16 @@ function AppRoutes() {
   );
 }
 
+import { NotificationProvider } from './components/Notification';
+
 export default function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
-    </AuthProvider>
+    <NotificationProvider>
+      <AuthProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </AuthProvider>
+    </NotificationProvider>
   );
 }
