@@ -119,7 +119,16 @@ const parseAIResponse = (responseText) => {
 };
 
 const isRetryableError = (error) => {
+    if (!error || !error.message) return false;
     const msg = error.message.toLowerCase();
     // 429 = Too Many Requests (Quota), 503 = Service Unavailable, etc.
-    return msg.includes('quota') || msg.includes('limit') || msg.includes('429') || msg.includes('503') || msg.includes('overloaded');
+    return (
+        msg.includes('quota') || 
+        msg.includes('limit') || 
+        msg.includes('429') || 
+        msg.includes('503') || 
+        msg.includes('overloaded') ||
+        msg.includes('exhausted') ||
+        msg.includes('billing') // Sometimes quota errors mention billing details for free tier
+    );
 };
